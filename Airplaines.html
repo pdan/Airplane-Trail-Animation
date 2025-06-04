@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Optimized Airplane Trail Animation</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    background: #fff;
+    overflow: hidden;
+  }
+  svg {
+    width: 100vw;
+    height: 100vh;
+    display: block;
+  }
+  .trail-segment {
+    stroke: gray;
+    stroke-width: 2;
+    stroke-dasharray: 4, 4;
+    fill: none;
+    opacity: 0.5;
+  }
+  .plane {
+    fill: black;
+  }
+</style>
+</head>
+<body>
+<svg id="canvas"></svg>
+
+<script>
+  const svg = document.getElementById("canvas");
+
+  // Config variables - optimized values
+  let dotSpeed = 20000;        // movement duration (ms)
+  let maxPoints = 3;          // reduced from 5 to 3
+  let trailMaxLength = 15;    // reduced from 30 to 15
+  let trailInterval = 100;    // increased from 50 to 100ms
+
+  const activePlanes = [];
+  let animationId = null;
+  let lastTime = 0;
+
+  function getRandomPos() {
+    return {
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight
+    };
+  }
+
+  // Create plane SVG group with path inside, returns <g> element
+  function createPlaneElement() {
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    g.setAttribute("class", "plane-group");
+    g.setAttribute("width", "20px")
+    g.setAttribute("height", "20px")
+
+    // Proper airplane shape - nose points right (0 degrees) for correct rotation
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("class", "plane");
+    path.setAttribute("style", "transform: rotate(90deg) scale(0.05) translate(-250px, -400px);")
+    path.setAttribute("d", "M438.8,320.6c-3.6-3.1-147.2-107.2-147.2-107.2c-0.2-0.2-0.4-0.4-0.5-0.5c-5.5-5.6-5.2-10.4-5.6-18.8c0,0-0.9-69-2.2-92  S270,64,256,64c0,0,0,0,0,0s0,0,0,0c-14,0-25.9,15-27.2,38s-2.2,92-2.2,92c-0.4,8.4-0.1,13.2-5.6,18.8c-0.2,0.2-0.4,0.4-0.5,0.5  c0,0-143.5,104.1-147.2,107.2s-9.2,7.8-9.2,18.2c0,12.2,3.6,13.7,10.6,11.6c0,0,140.2-39.5,145.4-40.8s7.9,0.6,8.3,7.5  s0.8,46.4,0.9,51s-0.6,4.7-2.9,7.4l-32,40.8c-1.7,2-2.7,4.5-2.7,7.3c0,0,0,6.1,0,12.4s2.8,7.3,8.2,4.9s32.6-17.4,32.6-17.4  c0.7-0.3,4.6-1.9,6.4-1.9c4.2,0,8-0.1,8.8,6.2c1.3,11.4,4.9,20.3,8.5,20.3c0,0,0,0,0,0s0,0,0,0c3.6,0,7.2-8.9,8.5-20.3  c0.7-6.3,4.6-6.2,8.8-6.2c1.8,0,5.7,1.6,6.4,1.9c0,0,27.2,15,32.6,17.4s8.2,1.4,8.2-4.9s0-12.4,0-12.4c0-2.8-1-5.4-2.7-7.3l-32-40.8  c-2.3-2.7-2.9-2.9-2.9-7.4s0.5-44.1,0.9-51s3.1-8.8,8.3-7.5s145.4,40.8,145.4,40.8c7.1,2.1,10.6,0.6,10.6-11.6  C448,328.4,442.5,323.7,438.8,320.6z");
+    g.appendChild(path);
+    return g;
+  }
+
+  function createPlane() {
+    if (activePlanes.length >= maxPoints) return;
+
+    const start = getRandomPos();
+    const end = getRandomPos();
+    const duration = dotSpeed;
+    const startTime = performance.now();
+
+    const plane = createPlaneElement();
+    plane.style.opacity = 0;
+    plane.style.zIndex = 10;
+    svg.appendChild(plane);
+
+    // Position variables
+    let prevX = start.x;
+    let prevY = start.y;
+    let lastTrailTime = startTime;
+
+    const planeData = {
+      plane,
+      start,
+      end,
+      duration,
+      startTime,
+      prevX,
+      prevY,
+      lastTrailTime,
+      trailSegments: [],
+      completed: false
+    };
+
+    activePlanes.push(planeData);
+  }
+
+  // Single animation loop for all planes
+  function animate(currentTime) {
+    // Throttle to ~60fps max
+    if (currentTime - lastTime < 16) {
+      animationId = requestAnimationFrame(animate);
+      return;
+    }
+    lastTime = currentTime;
+
+    // Update all planes in a single loop
+    for (let i = activePlanes.length - 1; i >= 0; i--) {
+      const planeData = activePlanes[i];
+      const elapsed = currentTime - planeData.startTime;
+      const progress = elapsed / planeData.duration;
+
+      if (progress >= 1 || planeData.completed) {
+        // Clean up completed plane
+        planeData.plane.remove();
+        planeData.trailSegments.forEach(s => {
+          if (s.parentNode) s.remove();
+        });
+        activePlanes.splice(i, 1);
+        continue;
+      }
+
+      // Fade in/out
+      let opacity = 1;
+      if (progress < 0.1) {
+        opacity = progress / 0.1;
+      } else if (progress > 0.9) {
+        opacity = (1 - progress) / 0.1;
+      }
+      planeData.plane.style.opacity = opacity;
+
+      const x = planeData.start.x + (planeData.end.x - planeData.start.x) * progress;
+      const y = planeData.start.y + (planeData.end.y - planeData.start.y) * progress;
+
+      // Calculate angle only if position changed significantly
+      const dx = x - planeData.prevX;
+      const dy = y - planeData.prevY;
+      const distanceMoved = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distanceMoved > 1) {
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+        planeData.plane.setAttribute("transform", `translate(${x},${y}) rotate(${angle})`);
+        planeData.prevX = x;
+        planeData.prevY = y;
+      }
+
+      // Add trail segments less frequently
+      if (currentTime - planeData.lastTrailTime > trailInterval) {
+        planeData.lastTrailTime = currentTime;
+
+        // Remove old segments before adding new ones
+        if (planeData.trailSegments.length >= trailMaxLength) {
+          const oldSegment = planeData.trailSegments.shift();
+          if (oldSegment.parentNode) {
+            fadeAndRemoveSegment(oldSegment);
+          }
+        }
+
+        // Create new trail segment as a dash
+        const segment = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        
+        // Create a dash that extends backward from the plane's current position
+        const dashLength = 8;
+        const backX = x - Math.cos(Math.atan2(dy, dx)) * dashLength;
+        const backY = y - Math.sin(Math.atan2(dy, dx)) * dashLength;
+        
+        segment.setAttribute("x1", backX);
+        segment.setAttribute("y1", backY);
+        segment.setAttribute("x2", x);
+        segment.setAttribute("y2", y);
+        segment.setAttribute("class", "trail-segment");
+        svg.appendChild(segment);
+        planeData.trailSegments.push(segment);
+      }
+    }
+
+    // Continue animation if there are active planes
+    if (activePlanes.length > 0) {
+      animationId = requestAnimationFrame(animate);
+    } else {
+      animationId = null;
+    }
+  }
+
+  // Optimized fade and remove function
+  function fadeAndRemoveSegment(element) {
+    // Use CSS transition for smoother performance
+    element.style.transition = 'opacity 1s ease-out';
+    element.style.opacity = '0';
+    
+    // Remove after transition
+    setTimeout(() => {
+      if (element.parentNode) {
+        element.remove();
+      }
+    }, 1000);
+  }
+
+  // Start animation loop only when needed
+  function startAnimation() {
+    if (!animationId && activePlanes.length > 0) {
+      animationId = requestAnimationFrame(animate);
+    }
+  }
+
+  // Create planes with delay to prevent all starting at once
+  function createPlaneWithDelay() {
+    createPlane();
+    startAnimation();
+  }
+
+  // Start initial planes with staggered timing
+  for(let i = 0; i < maxPoints; i++) {
+    setTimeout(() => createPlaneWithDelay(), i * 500);
+  }
+
+  // Create new planes less frequently and only when needed
+  setInterval(() => {
+    if (activePlanes.length < maxPoints) {
+      createPlaneWithDelay();
+    }
+  }, 2000); // Increased from 1000ms to 2000ms
+
+  // Pause animation when tab is not visible to save CPU
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+    } else {
+      startAnimation();
+    }
+  });
+</script>
+</body>
+</html>
